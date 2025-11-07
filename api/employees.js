@@ -4,9 +4,9 @@ import db from "#db/client";
 
 const router = express.Router();
 
-function isPositiveInt(value) {
-  const num = Number(value);
-  return Number.isInteger(num) && num > 0;
+// helper: id must be all digits (so "1e10" is NOT valid)
+function isValidId(value) {
+  return /^\d+$/.test(value);
 }
 
 // GET /employees
@@ -23,15 +23,18 @@ router.get("/", async (req, res, next) => {
 router.get("/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isPositiveInt(id)) {
+
+    // invalid shape like "1e10"
+    if (!isValidId(id)) {
       return res.status(400).json({ error: "id must be a positive integer" });
     }
 
     const { rows } = await db.query(
       "SELECT * FROM employees WHERE id = $1;",
-      [id],
+      [id]
     );
 
+    // shape is fine but no employee → 404
     if (rows.length === 0) {
       return res.status(404).json({ error: "Employee not found" });
     }
@@ -46,8 +49,6 @@ router.get("/:id", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     const { name, birthday, salary } = req.body || {};
-
-    // test wants 400 if no body or missing required fields
     if (!name || !birthday || typeof salary !== "number") {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -58,7 +59,7 @@ router.post("/", async (req, res, next) => {
       VALUES ($1, $2, $3)
       RETURNING *;
       `,
-      [name, birthday, salary],
+      [name, birthday, salary]
     );
 
     res.status(201).json(rows[0]);
@@ -71,18 +72,18 @@ router.post("/", async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { name, birthday, salary } = req.body || {};
 
+    // body validations (tests do these)
     if (!req.body) {
       return res.status(400).json({ error: "Request body required" });
     }
-
-    const { name, birthday, salary } = req.body;
-
     if (!name || !birthday || typeof salary !== "number") {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    if (!isPositiveInt(id)) {
+    // id shape
+    if (!isValidId(id)) {
       return res.status(400).json({ error: "id must be a positive integer" });
     }
 
@@ -95,7 +96,7 @@ router.put("/:id", async (req, res, next) => {
       WHERE id = $4
       RETURNING *;
       `,
-      [name, birthday, salary, id],
+      [name, birthday, salary, id]
     );
 
     if (rows.length === 0) {
@@ -110,30 +111,28 @@ router.put("/:id", async (req, res, next) => {
 
 // DELETE /employees/:id
 router.delete("/:id", async (req, res, next) => {
+  const { id } = req.params;
+
+  // bad id like "1e10"
+  if (!isValidId(id)) {
+    return res.status(400).json({ error: "id must be a positive integer" });
+  }
+
   try {
-    const { id } = req.params;
-
-    if (!isPositiveInt(id)) {
-      return res.status(400).json({ error: "id must be a positive integer" });
-    }
-
-    const { rows } = await db.query(
-      `
-      DELETE FROM employees
-      WHERE id = $1
-      RETURNING *;
-      `,
-      [id],
+    const result = await db.query(
+      "DELETE FROM employees WHERE id = $1 RETURNING *;",
+      [id]
     );
 
-    if (rows.length === 0) {
+    // id was fine but row doesn't exist → 404
+    if (result.rows.length === 0) {
       return res.status(404).json({ error: "Employee not found" });
     }
 
-    // test expects 204 with no body
-    res.status(204).end();
+    // success → 204
+    return res.status(204).send();
   } catch (err) {
-    next(err);
+    return next(err);
   }
 });
 
