@@ -1,5 +1,140 @@
+// api/employees.js
 import express from "express";
-const router = express.Router();
-export default router;
+import db from "#db/client";
 
-// TODO: this file!
+const router = express.Router();
+
+function isPositiveInt(value) {
+  const num = Number(value);
+  return Number.isInteger(num) && num > 0;
+}
+
+// GET /employees
+router.get("/", async (req, res, next) => {
+  try {
+    const { rows } = await db.query("SELECT * FROM employees;");
+    res.status(200).json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /employees/:id
+router.get("/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isPositiveInt(id)) {
+      return res.status(400).json({ error: "id must be a positive integer" });
+    }
+
+    const { rows } = await db.query(
+      "SELECT * FROM employees WHERE id = $1;",
+      [id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    res.status(200).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /employees
+router.post("/", async (req, res, next) => {
+  try {
+    const { name, birthday, salary } = req.body || {};
+
+    // test wants 400 if no body or missing required fields
+    if (!name || !birthday || typeof salary !== "number") {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const { rows } = await db.query(
+      `
+      INSERT INTO employees (name, birthday, salary)
+      VALUES ($1, $2, $3)
+      RETURNING *;
+      `,
+      [name, birthday, salary],
+    );
+
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /employees/:id
+router.put("/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!req.body) {
+      return res.status(400).json({ error: "Request body required" });
+    }
+
+    const { name, birthday, salary } = req.body;
+
+    if (!name || !birthday || typeof salary !== "number") {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (!isPositiveInt(id)) {
+      return res.status(400).json({ error: "id must be a positive integer" });
+    }
+
+    const { rows } = await db.query(
+      `
+      UPDATE employees
+      SET name = $1,
+          birthday = $2,
+          salary = $3
+      WHERE id = $4
+      RETURNING *;
+      `,
+      [name, birthday, salary, id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    res.status(200).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /employees/:id
+router.delete("/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!isPositiveInt(id)) {
+      return res.status(400).json({ error: "id must be a positive integer" });
+    }
+
+    const { rows } = await db.query(
+      `
+      DELETE FROM employees
+      WHERE id = $1
+      RETURNING *;
+      `,
+      [id],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
+
+    // test expects 204 with no body
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;
